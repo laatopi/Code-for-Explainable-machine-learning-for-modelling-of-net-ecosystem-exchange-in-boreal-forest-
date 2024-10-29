@@ -5,9 +5,9 @@ if (!requireNamespace("here", quietly = TRUE)) install.packages("here")
 library(here)
 
 # Define paths relative to the project root using `here()`
-raw_data_path <- here("rawData")
-base_data_path <- here("data")
-base_output_path <- here("results")
+raw_data_path <- here("rawData/")
+base_data_path <- here("data/")
+base_output_path <- here("results/")
 
 # Ensure required folders exist
 if (!dir.exists(raw_data_path)) dir.create(raw_data_path)
