@@ -4,6 +4,9 @@ This repository contains R scripts for processing and modeling SMEAR station dat
 by Ezhova et al.
 Read the paper for detailed results:
 [Paper](https://egusphere.copernicus.org/preprints/2023/egusphere-2023-2559/egusphere-2023-2559.pdf)
+
+[Raw data publicly available here!](https://smear.avaa.csc.fi/)
+
 ## Repository Structure
 
 ##### ├── config.R                   # Configures project paths
