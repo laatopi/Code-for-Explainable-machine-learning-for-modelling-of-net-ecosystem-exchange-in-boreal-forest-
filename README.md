@@ -1,6 +1,7 @@
-# Greenhouse Gas Flux and Climate Data Analysis
+# Hyytiälä and Värriö Greenhouse Gas Flux and Climate Data Analysis
 
-This repository contains R scripts for processing and modeling SMEAR station data to analyze greenhouse gas flux and climate interactions.
+This repository contains R scripts for processing and modeling SMEAR station data to analyze greenhouse gas flux and climate interactions,
+by Ezhova et al.
 Read the paper for detailed results:
 [Paper](https://egusphere.copernicus.org/preprints/2023/egusphere-2023-2559/egusphere-2023-2559.pdf)
 ## Repository Structure
