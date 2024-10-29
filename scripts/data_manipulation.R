@@ -10,7 +10,7 @@ library(tidyr)
 source("config.R")
 
 # SMEAR2 Processing
-smear2_path <- file.path(raw_data_path, "SMEAR2/Larger")
+smear2_path <- file.path(raw_data_path, "SMEAR2/Larger/")
 x <- list.dirs(path = smear2_path, recursive = FALSE) %>%
   lapply(function(dir) list.files(dir, full.names = TRUE)) %>%
   .[-1] %>%
@@ -85,7 +85,7 @@ x <- x %>%
 write.csv(x, file.path(base_output_path, "smear2008-18_allmonths.csv"))
 
 # Process SMEAR1 Data
-smear1_path <- file.path(raw_data_path, "SMEAR1/varrio")
+smear1_path <- file.path(raw_data_path, "SMEAR1/varrio/")
 x <- list.files(path = smear1_path, full.names = TRUE) %>%
   lapply(read.csv) %>%
   lapply(function(df) {
@@ -128,7 +128,7 @@ x <- merge(x, soil, by = "Time", all.x = TRUE) %>%
 write.csv(x, file.path(base_output_path, "varrio_2015-2019_allmonths.csv"))
 
 # Process Post-2019 SMEAR2 Data
-smear2_2019_path <- file.path(raw_data_path, "SMEAR2/hyytiala2019+")
+smear2_2019_path <- file.path(raw_data_path, "SMEAR2/hyytiala2019+/")
 x <- list.files(smear2_2019_path, full.names = TRUE)[-1] %>%
   lapply(read.csv) %>%
   lapply(function(df) {
