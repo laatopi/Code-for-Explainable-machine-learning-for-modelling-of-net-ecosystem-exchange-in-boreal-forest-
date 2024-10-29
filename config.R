@@ -1,14 +1,14 @@
 # config.R
 
-# Configuration file for paths used in the project
-# Users can adjust these paths based on their local environment.
+# Load the `here` package for consistent relative paths
+if (!requireNamespace("here", quietly = TRUE)) install.packages("here")
+library(here)
 
-# Base path for data files (relative to project root)
-base_data_path <- "./data/"
+# Define paths relative to the project root using `here()`
+raw_data_path <- here("rawData")
+base_data_path <- here("data")
+base_output_path <- here("results")
 
-# Base path for output files (relative to project root)
-base_output_path <- "./results/"
-
-# Ensure data and results folders exist (optional but helpful)
-if (!dir.exists(base_data_path)) dir.create(base_data_path)
+# Ensure required folders exist
+if (!dir.exists(raw_data_path)) dir.create(raw_data_path)
 if (!dir.exists(base_output_path)) dir.create(base_output_path)
