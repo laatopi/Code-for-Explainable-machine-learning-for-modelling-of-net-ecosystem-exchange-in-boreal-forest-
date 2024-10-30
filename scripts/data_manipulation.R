@@ -5,6 +5,7 @@ library(readxl)
 library(purrr)
 library(stringr)
 library(tidyr)
+library(lubridate)
 
 # Load configuration file for paths
 source("config.R")
@@ -12,18 +13,16 @@ source("config.R")
 # SMEAR2 Processing
 smear2_path <- file.path(raw_data_path, "SMEAR2/Larger/")
 x <- list.dirs(path = smear2_path, recursive = FALSE) %>%
-  lapply(function(dir) list.files(dir, full.names = TRUE)) %>%
-  .[-1] %>%
-  lapply(function(files) lapply(files, read.csv) %>% bind_rows()) %>%
-  lapply(function(df) {
-    df$Time <- as.POSIXct(str_c(df$Year, "-", df$Month, "-", df$Day, " ", df$Hour, ":", df$Minute, ":00"), format="%Y-%m-%d %H:%M:%S", tz="UTC")
-    df
-  }) %>%
-  lapply(function(df) select(df, -Minute, -Second, -Hour, -Day, -Year, -Month)) %>%
-  lapply(function(df) arrange(df, Time)) %>%
-  lapply(function(df) if (nrow(df) > 464400) df[-c(1:4368),] else df) %>%
+  lapply(function(x) {list.files(x, full.names = TRUE)}) %>%
+  #.[-1] %>%
+  lapply(function(x) {lapply(x, read.csv) %>% bind_rows}) %>%
+  lapply(function(x) {x$Time <- as.POSIXct(str_c(x$Year, "-", x$Month, "-", x$Day, " ", x$Hour, ":", x$Minute, ":00"), format="%Y-%m-%d %H:%M:%S", tz="UTC");x}) %>%
+  #lapply(function(x) filter(x, Month > 6 & Month < 9)) %>%
+  lapply(function(x) x[!names(x) %in% c("Minute","Second", "Hour", "Day", "Year", "Month")]) %>%
+  lapply(function(x) arrange(x, Time)) %>%
+  lapply(function(x){if(length(x$Time) > 464400) x[-c(1:4368),] else x}) %>%
   reduce(cbind) %>%
-  .[unique(colnames(.))]
+  .[unique(colnames(.))] 
 
 # Load additional PAR data
 path1 <- file.path(smear2_path, "smeardata_magicPAR.csv")
@@ -31,144 +30,146 @@ path2 <- file.path(smear2_path, "smeardata_magicDIFFUSEPAR.csv")
 
 par <- read.csv(path1)
 diffpar <- read.csv(path2)
-par <- par %>%
-  mutate(
-    HYY_META.PAR2_magic = HYY_META.Glob * 2.06,
-    HYY_META.diffPAR_magic = diffpar$HYY_META.diffGLOB * 2.06,
-    Time = as.POSIXct(str_c(Year, "-", Month, "-", Day, " ", Hour, ":", Minute, ":00"), format="%Y-%m-%d %H:%M:%S", tz="UTC")
-  ) %>%
-  select(-Minute, -Second, -Hour, -Day, -Year, -Month, -HYY_META.Glob)
+par$HYY_META.PAR2_magic <-par$HYY_META.Glob * 2.06
+par$HYY_META.diffPAR_magic <- diffpar$HYY_META.diffGLOB * 2.06
+par$Time <- as.POSIXct(str_c(par$Year, "-", par$Month, "-", par$Day, " ", par$Hour, ":", par$Minute, ":00"), format="%Y-%m-%d %H:%M:%S", tz="UTC")
+par <- par[!names(par) %in% c("Minute","Second", "Hour", "Day", "Year", "Month", "HYY_META.Glob")]
 
-# Merge PAR data into main data
-x <- merge(x, par, by = "Time", all.x = TRUE) %>%
-  mutate(
-    HYY_META.PAR2 = coalesce(HYY_META.PAR2, HYY_META.PAR2_magic),
-    HYY_META.diffPAR = coalesce(HYY_META.diffPAR, HYY_META.diffPAR_magic)
-  ) %>%
-  select(-HYY_META.PAR2_magic, -HYY_META.diffPAR_magic)
+x <- merge(x, par, by="Time", all.x = TRUE)
+x$HYY_META.PAR2 <- coalesce(x$HYY_META.PAR2, x$HYY_META.PAR2_magic)
+x$HYY_META.diffPAR <- coalesce(x$HYY_META.diffPAR, x$HYY_META.diffPAR_magic)
+x <- x[!names(x) %in% c("HYY_META.PAR2_magic", "HYY_META.diffPAR_magic")]
 
-# Soil moisture processing for SMEAR2
-soil <- x %>%
-  select(HYY_META.wsoil_B2, Time) %>%
+soil <- x %>% select(HYY_META.wsoil_B2, Time) %>%
   na.omit() %>%
   mutate(Time = format(Time, '%Y-%m-%d')) %>%
   aggregate(HYY_META.wsoil_B2 ~ Time, mean) %>%
-  mutate(Time = as.POSIXct(Time, format = '%Y-%m-%d %H:%M:%S')) %>%
-  unnest(cols = list(Time = seq(Time, by = "30 min", length.out = 48)))
+  mutate(Time = as.POSIXct(format(as.POSIXct(Time), '%Y-%m-%d %H:%M:%S'))) %>%
+  mutate(Time = lapply(Time, function(x) seq(x, by = "30 min", length = 48))) %>%
+  unnest(cols = c(Time))
 
-x <- merge(x, soil, by = "Time", all.x = TRUE) %>%
-  mutate(HYY_META.wsoil_B2 = coalesce(HYY_META.wsoil_B2.x, HYY_META.wsoil_B2.y)) %>%
-  select(-HYY_META.wsoil_B2.x, -HYY_META.wsoil_B2.y)
+x <- merge(x, soil, by="Time", all.x = TRUE)
+x$HYY_META.wsoil_B2 <- coalesce(x$HYY_META.wsoil_B2.x, x$HYY_META.wsoil_B2.y)
+x <- x[!names(x) %in% c("HYY_META.wsoil_B2.x", "HYY_META.wsoil_B2.y")]
 
-# Filter and rename columns for SMEAR2
-x <- x %>%
-  filter(HYY_EDDY233.Qc_gapf_NEE == 0, HYY_META.PAR2 > 10) %>%
-  select(-HYY_EDDY233.Qc_gapf_NEE, -HYY_META.wsoil_C1, -HYY_META.wsoil_A, -HYY_META.wsoil_B1) %>%
-  rename(
-    FricVel = HYY_EDDY233.u_star,
-    AirTemp = HYY_META.T336,
-    SoilTempB = HYY_META.tsoil_B2,
-    SoilTempA = HYY_META.tsoil_A,
-    RelHum = HYY_META.RHTd,
-    PAR = HYY_META.PAR2,
-    SoilWatCont = HYY_META.wsoil_B2,
-    DiffRad = HYY_META.diffPAR,
-    NEE = HYY_EDDY233.NEE
-  ) %>%
-  mutate(
-    DiffuseFract = DiffRad / PAR,
-    VaporPressureDeficit = 611 * exp((17.27 * AirTemp) / (237.3 + AirTemp)) - 
-      (611 * exp((17.27 * AirTemp) / (237.3 + AirTemp)) * (RelHum / 100))
-  )
+x <- na.omit(x[!names(x) %in% c("HYY_META.wsoil_C1", "HYY_META.wsoil_A", "HYY_META.wsoil_B1")]) %>%
+  filter(HYY_EDDY233.Qc_gapf_NEE == 0) %>%
+  filter(HYY_META.PAR2 > 10) %>%
+  within(rm(HYY_EDDY233.Qc_gapf_NEE))
+
+names(x)[names(x) == 'HYY_EDDY233.u_star'] <- 'FricVel'
+names(x)[names(x) == 'HYY_META.T336'] <- 'AirTemp'
+names(x)[names(x) == 'HYY_META.tsoil_B2'] <- 'SoilTempB'
+names(x)[names(x) == 'HYY_META.tsoil_A'] <- 'SoilTempA'
+names(x)[names(x) == 'HYY_META.RHTd'] <- 'RelHum'
+names(x)[names(x) == 'HYY_META.PAR2'] <- 'PAR'
+names(x)[names(x) == 'HYY_META.wsoil_B2'] <- 'SoilWatCont'
+names(x)[names(x) == 'HYY_META.diffPAR'] <- 'DiffRad'
+names(x)[names(x) == 'HYY_EDDY233.NEE'] <- 'NEE'
+
+x["DiffuseFract"] <- x["DiffRad"] / x["PAR"]
+x["DiffuseFract"] <- x['DiffuseFract']
+
+e_s <- 611 * exp( (17.27 * x["AirTemp"]) / (237.3 + x["AirTemp"]) )
+e_a <- e_s * (x["RelHum"]/100)
+x["VaporPressureDeficit"] = e_s - e_a
 
 # Save processed SMEAR2 data
-write.csv(x, file.path(base_output_path, "smear2008-18_allmonths.csv"))
+#write.csv(x, file.path(base_output_path, "smear2008-18_allmonths.csv"))
 
 # Process SMEAR1 Data
 smear1_path <- file.path(raw_data_path, "SMEAR1/varrio/")
 x <- list.files(path = smear1_path, full.names = TRUE) %>%
   lapply(read.csv) %>%
-  lapply(function(df) {
-    df$Time <- as.POSIXct(str_c(df$Year, "-", df$Month, "-", df$Day, " ", df$Hour, ":", df$Minute, ":00"), format="%Y-%m-%d %H:%M:%S", tz="UTC")
-    df
-  }) %>%
-  lapply(function(df) select(df, -Minute, -Second, -Hour, -Day, -Year, -Month)) %>%
-  lapply(function(df) arrange(df, Time)) %>%
+  lapply(function(x) {x$Time <- as.POSIXct(str_c(x$Year, "-", x$Month, "-", x$Day, " ", x$Hour, ":", x$Minute, ":00"), format="%Y-%m-%d %H:%M:%S", tz="UTC");x}) %>%
+  #lapply(function(x) filter(x, Month > 6 & Month < 9 & Year > 2012)) %>%
+  lapply(function(x) x[!names(x) %in% c("Minute","Second", "Hour", "Day", "Year", "Month")]) %>%
+  lapply(function(x) arrange(x, Time))  %>%
   reduce(merge)
 
-# Soil processing for SMEAR1
-soil <- x %>%
-  select(VAR_META.wsoil, Time) %>%
+
+# 
+soil <- x %>% select(VAR_META.wsoil, Time) %>%
   na.omit() %>%
   mutate(Time = format(Time, '%Y-%m-%d')) %>%
   aggregate(VAR_META.wsoil ~ Time, mean) %>%
-  mutate(Time = as.POSIXct(Time, format = '%Y-%m-%d %H:%M:%S')) %>%
-  unnest(cols = list(Time = seq(Time, by = "30 min", length.out = 48)))
+  mutate(Time = as.POSIXct(format(as.POSIXct(Time), '%Y-%m-%d %H:%M:%S'))) %>%
+  mutate(Time = lapply(Time, function(x) seq(x, by = "30 min", length = 48))) %>%
+  unnest(cols = c(Time))
+# 
+x <- merge(x, soil, by="Time", all.x = TRUE)
+x$VAR_META.wsoil <- coalesce(x$VAR_META.wsoil.x, x$VAR_META.wsoil.y)
+x <- x[!names(x) %in% c("VAR_META.wsoil.x", "VAR_META.wsoil.y")]
 
-x <- merge(x, soil, by = "Time", all.x = TRUE) %>%
-  mutate(VAR_META.wsoil = coalesce(VAR_META.wsoil.x, VAR_META.wsoil.y)) %>%
-  select(-VAR_META.wsoil.x, -VAR_META.wsoil.y) %>%
-  rename(
-    FricVel = VAR_EDDY.u_star,
-    AirTemp = VAR_META.TDRY1,
-    SoilTempA = VAR_META.ST,
-    RelHum = VAR_META.HUM_RH,
-    PAR = VAR_META.PAR,
-    SoilWatCont = VAR_META.wsoil,
-    DiffRad = VAR_META.diffPAR,
-    NEE = VAR_EDDY.NEE
-  ) %>%
-  mutate(
-    DiffuseFract = DiffRad / PAR,
-    VaporPressureDeficit = 611 * exp((17.27 * AirTemp) / (237.3 + AirTemp)) - 
-      (611 * exp((17.27 * AirTemp) / (237.3 + AirTemp)) * (RelHum / 100))
-  )
+x <- na.omit(x[!names(x) %in% c("")]) %>%
+  filter(VAR_META.PAR > 10) %>%
+  filter(VAR_EDDY.Qc_gapf_NEE == 0) %>%
+  within(rm(VAR_EDDY.Qc_gapf_NEE))
+
+
+names(x)[names(x) == 'VAR_EDDY.u_star'] <- 'FricVel'
+names(x)[names(x) == 'VAR_META.TDRY1'] <- 'AirTemp'
+names(x)[names(x) == 'VAR_META.ST'] <- 'SoilTempA'
+names(x)[names(x) == 'VAR_META.HUM_RH'] <- 'RelHum'
+names(x)[names(x) == 'VAR_META.PAR'] <- 'PAR'
+names(x)[names(x) == 'VAR_META.wsoil'] <- 'SoilWatCont'
+names(x)[names(x) == 'VAR_META.diffPAR'] <- 'DiffRad'
+names(x)[names(x) == 'VAR_EDDY.NEE'] <- 'NEE'
+
+x["DiffuseFract"] <- x["DiffRad"] / x["PAR"]
+x["DiffuseFract"] <- x['DiffuseFract']
+
+e_s <- 611 * exp( (17.27 * x["AirTemp"]) / (237.3 + x["AirTemp"]) )
+e_a <- e_s * (x["RelHum"]/100)
+x["VaporPressureDeficit"] = e_s - e_a
 
 # Save processed SMEAR1 data
-write.csv(x, file.path(base_output_path, "varrio_2015-2019_allmonths.csv"))
+#write.csv(x, file.path(base_output_path, "varrio_2015-2019_allmonths.csv"))
 
 # Process Post-2019 SMEAR2 Data
 smear2_2019_path <- file.path(raw_data_path, "SMEAR2/hyytiala2019+/")
 x <- list.files(smear2_2019_path, full.names = TRUE)[-1] %>%
   lapply(read.csv) %>%
-  lapply(function(df) {
-    df$Time <- as.POSIXct(str_c(df$Year, "-", df$Month, "-", df$Day, " ", df$Hour, ":", df$Minute, ":00"), format="%Y-%m-%d %H:%M:%S", tz="UTC")
-    df
-  }) %>%
-  lapply(function(df) select(df, -Minute, -Second, -Hour, -Day, -Year, -Month)) %>%
-  lapply(function(df) arrange(df, Time)) %>%
+  lapply(function(x) {x$Time <- as.POSIXct(str_c(x$Year, "-", x$Month, "-", x$Day, " ", x$Hour, ":", x$Minute, ":00"), format="%Y-%m-%d %H:%M:%S", tz="UTC");x}) %>%
+  lapply(function(x) filter(x, Month > 6 & Month < 9)) %>%
+  lapply(function(x) x[!names(x) %in% c("Minute","Second", "Hour", "Day", "Year", "Month")]) %>%
+  lapply(function(x) arrange(x, Time))  %>%
   reduce(cbind) %>%
   .[unique(colnames(.))]
 
-# Soil moisture processing for Post-2019 SMEAR2 data
-soil <- x %>%
-  select(HYY_META.wsoil_B2, Time) %>%
+soil <- x %>% select(HYY_META.wsoil_B2, Time) %>%
   na.omit() %>%
   mutate(Time = format(Time, '%Y-%m-%d')) %>%
   aggregate(HYY_META.wsoil_B2 ~ Time, mean) %>%
-  mutate(Time = as.POSIXct(Time, format = '%Y-%m-%d %H:%M:%S')) %>%
-  unnest(cols = list(Time = seq(Time, by = "30 min", length.out = 48)))
+  mutate(Time = as.POSIXct(format(as.POSIXct(Time), '%Y-%m-%d %H:%M:%S'))) %>%
+  mutate(Time = lapply(Time, function(x) seq(x, by = "30 min", length = 48))) %>%
+  unnest(cols = c(Time))
 
-x <- merge(x, soil, by = "Time", all.x = TRUE) %>%
-  mutate(HYY_META.wsoil_B2 = coalesce(HYY_META.wsoil_B2.x, HYY_META.wsoil_B2.y)) %>%
-  select(-HYY_META.wsoil_B2.x, -HYY_META.wsoil_B2.y) %>%
-  filter(HYY_EDDY233.Qc_gapf_NEE == 0, HYY_META.PAR2 > 10) %>%
-  rename(
-    FricVel = HYY_EDDYMAST.u_star_270,
-    AirTemp = HYY_META.T336,
-    SoilTempB = HYY_META.tsoil_B2,
-    SoilTempA = HYY_META.tsoil_A,
-    RelHum = HYY_META.RHTd,
-    PAR = HYY_META.PAR2,
-    SoilWatCont = HYY_META.wsoil_B2,
-    DiffRad = HYY_META.diffPAR,
-    NEE = HYY_EDDY233.NEE
-  ) %>%
-  mutate(
-    DiffuseFract = DiffRad / PAR,
-    VaporPressureDeficit = 611 * exp((17.27 * AirTemp) / (237.3 + AirTemp)) - 
-      (611 * exp((17.27 * AirTemp) / (237.3 + AirTemp)) * (RelHum / 100))
-  )
+x <- merge(x, soil, by="Time", all.x = TRUE)
+x$HYY_META.wsoil_B2 <- coalesce(x$HYY_META.wsoil_B2.x, x$HYY_META.wsoil_B2.y)
+x <- x[!names(x) %in% c("HYY_META.wsoil_B2.x", "HYY_META.wsoil_B2.y")]
+
+x <- na.omit(x[!names(x) %in% c("HYY_META.tsoil_B2")]) %>%
+  filter(HYY_EDDY233.Qc_gapf_NEE == 0) %>%
+  filter(HYY_META.PAR2 > 10) %>%
+  within(rm(HYY_EDDY233.Qc_gapf_NEE))
+
+names(x)[names(x) == 'HYY_EDDYMAST.u_star_270'] <- 'FricVel'
+names(x)[names(x) == 'HYY_META.T336'] <- 'AirTemp'
+names(x)[names(x) == 'HYY_META.tsoil_B2'] <- 'SoilTempB'
+names(x)[names(x) == 'HYY_META.tsoil_A'] <- 'SoilTempA'
+names(x)[names(x) == 'HYY_META.RHTd'] <- 'RelHum'
+names(x)[names(x) == 'HYY_META.PAR2'] <- 'PAR'
+names(x)[names(x) == 'HYY_META.wsoil_B2'] <- 'SoilWatCont'
+names(x)[names(x) == 'HYY_META.diffPAR'] <- 'DiffRad'
+names(x)[names(x) == 'HYY_EDDY233.NEE'] <- 'NEE'
+
+x["DiffuseFract"] <- x["DiffRad"] / x["PAR"]
+x["DiffuseFract"] <- x['DiffuseFract']
+
+e_s <- 611 * exp((17.27 * x["AirTemp"]) / (237.3 + x["AirTemp"]))
+e_a <- e_s * (x["RelHum"]/100)
+x["VaporPressureDeficit"] = e_s - e_a
 
 # Save Post-2019 SMEAR2 processed data
-write.csv(x, file.path(base_output_path, "smear2019-21_allmonths.csv"))
+#write.csv(x, file.path(base_output_path, "smear2019-21_allmonths.csv"))
