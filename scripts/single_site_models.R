@@ -54,7 +54,14 @@ feature_importance <- function(model, y, X) {
   return(imp)
 }
 
+ale_calculate <- function(model, X) {
+  mod <- Predictor$new(model, data = X)
+  ale <- FeatureEffects$new(mod)
+  return(ale)
+}
+
 fi_df <- data.frame()
+ale_df <- data.frame()
 
 # Function to perform data splitting and model training
 train_models <- function(data, names, model_names, seed, p_val, hyperparams) {
@@ -136,7 +143,12 @@ train_models <- function(data, names, model_names, seed, p_val, hyperparams) {
       
       fi_df <<- rbind(fi_df, fi)
       
-      print(fi_df)
+      ale_calculate <- ale(models[j], within(test, rm("NEE", "Time")))$results
+      ale$seed <- seed
+      ale$model <- j
+      ale$site <- names[i]
+      
+      ale_df <<- rbind(ale_df, ale)      
     }
     
     models_list[names[[i]]] <- list(models)
@@ -168,12 +180,14 @@ for (seed in seeds) {
 }
 
 # Save results to output directory
-save(results, file = paste0(base_output_path, "trained_models_seeds.RData"))
+save(results, file = paste0(base_output_path, "trained_models.RData"))
 write.csv(all_results_df, file = paste0(base_output_path, "all_results_df.csv"), row.names = FALSE)
-write.csv(fi_df, file = paste0(base_output_path, "fi_seed.csv"), row.names = FALSE)
+write.csv(fi_df, file = paste0(base_output_path, "fi.csv"), row.names = FALSE)
+write.csv(ale_df, file = paste0(base_output_path, "ale.csv"), row.names = FALSE)
+
 
 # Output time taken for each seed
-sink(file = paste0(base_output_path, "test_output_seeds.txt"))
+sink(file = paste0(base_output_path, "test_output.txt"))
 for (seed in seeds) {
   cat("Time taken for seed", seed, ":", results[[as.character(seed)]][[2]], "\n")
 }

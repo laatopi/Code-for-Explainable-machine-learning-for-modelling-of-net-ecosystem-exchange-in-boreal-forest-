@@ -13,7 +13,7 @@ source("../config.R")
 # Set up parallel processing
 cl <- makePSOCKcluster(parallelly::availableCores() - 1)
 registerDoParallel(cl)
-clusterEvalQ(cl, .libPaths("/scratch/dongelr1/laantito/"))
+clusterEvalQ(cl, .libPaths())
 
 # Data loader function
 data_loader <- function(return_max_months = FALSE, return_with_site = TRUE) {
@@ -82,7 +82,14 @@ feature_importance <- function(model, y, X) {
   return(imp)
 }
 
+ale_calculate <- function(model, X) {
+  mod <- Predictor$new(model, data = X)
+  ale <- FeatureEffects$new(mod)
+  return(ale)
+}
+
 fi_df <- data.frame()
+ale_df <- data.frame()
 
 # Train models function
 train_models <- function(train, test, model_names, seed, return_with_site, name) {
@@ -133,6 +140,12 @@ train_models <- function(train, test, model_names, seed, return_with_site, name)
     fi$model <- j
     fi$site <- name
     fi_df <<- rbind(fi_df, fi)
+    
+    ale_calculate <- ale(models[j], within(test, rm("NEE", "Time")))$results
+    ale$seed <- seed
+    ale$model <- j
+    ale$site <- names[i]
+    ale_df <<- rbind(ale_df, ale)  
   }
   
   return(list(models_list = models, results_df = results_df))
@@ -177,12 +190,14 @@ for (i in 1:length(data_configs)) {
 }
 
 # Save results
-save(results, file = paste0(base_output_path, "trained_models_seeds_config.RData"))
-write.csv(all_results_df, file = paste0(base_output_path, "all_results_df_config.csv"), row.names = FALSE)
-write.csv(fi_df, file = paste0(base_output_path, "fi_seed_site.csv"), row.names = FALSE)
+save(results, file = paste0(base_output_path, "trained_models_combined.RData"))
+write.csv(all_results_df, file = paste0(base_output_path, "all_results_df_combined.csv"), row.names = FALSE)
+write.csv(fi_df, file = paste0(base_output_path, "fi_combined.csv"), row.names = FALSE)
+write.csv(ale_df, file = paste0(base_output_path, "ale_combined.csv"), row.names = FALSE)
+
 
 # Output time taken for each configuration and seed
-sink(file = paste0(base_output_path, "test_output_seeds_config.txt"))
+sink(file = paste0(base_output_path, "test_output_combined.txt"))
 for (result_name in names(results)) {
   cat("Time taken for config", result_name, ":", results[[result_name]][[2]], "\n")
 }
